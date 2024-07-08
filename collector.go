@@ -631,7 +631,7 @@ func (c *Collector) registrationsMetrics(ch chan<- prometheus.Metric) error {
 
 	for _, cc := range rt.Row {
 		cc_load, err := prometheus.NewConstMetric(
-			prometheus.NewDesc(namespace+"_registration_defails", "freeswitch registration status", nil, prometheus.Labels{"reg_user": cc.RegUser.Text, "hostname": cc.Hostname.Text, "realm": cc.Realm.Text, "token": cc.Token.Text, "url": cc.Url.Text, "expires": cc.Expires.Text, "network_ip": cc.NetworkIp.Text, "network_port": cc.NetworkPort.Text, "network_proto": cc.NetworkProto.Text}),
+			prometheus.NewDesc(namespace+"_registration_details", "freeswitch registration status", nil, prometheus.Labels{"reg_user": cc.RegUser.Text, "hostname": cc.Hostname.Text, "realm": cc.Realm.Text, "token": cc.Token.Text, "url": cc.Url.Text, "expires": cc.Expires.Text, "network_ip": cc.NetworkIp.Text, "network_port": cc.NetworkPort.Text, "network_proto": cc.NetworkProto.Text}),
 			prometheus.GaugeValue,
 			float64(1),
 		)

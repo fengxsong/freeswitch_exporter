@@ -1,7 +1,9 @@
 # FreeSWITCH Exporter for Prometheus
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/mroject/freeswitch_exporter)](https://goreportcard.com/report/github.com/mroject/freeswitch_exporter)
+[![Go Report Card](https://goreportcard.com/badge/github.com/fengxsong/freeswitch_exporter)](https://goreportcard.com/report/github.com/fengxsong/freeswitch_exporter)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/mroject/freeswitch_exporter/LICENSE)
+
+Since [PR](https://github.com/mroject/freeswitch_exporter/pull/26) has been closed, we will maintain our own fork.
 
 A [FreeSWITCH](https://freeswitch.org/confluence/display/FREESWITCH/FreeSWITCH+Explained) exporter for Prometheus.
 
@@ -21,13 +23,11 @@ Add metrics as below:
 
 Add feature:
 
-1. `web.config` support tls, authorization and etc.
-
-configuration exporter web.config visit: https://prometheus.io/docs/guides/basic-auth/
+1. `web.config` support tls, authorization and etc, please visit [ref](https://prometheus.io/docs/guides/basic-auth/)
 
 ## Getting Started
 
-Pre-built static binaries are available in [releases](https://github.com/mroject/freeswitch_exporter/releases).
+Pre-built static binaries are available in [releases](https://github.com/fengxsong/freeswitch_exporter/releases).
 
 To run it:
 
@@ -63,7 +63,7 @@ Flags:
 
 ## Usage
 
-Make sure [mod_event_socket](https://freeswitch.org/confluence/display/FREESWITCH/mod_event_socket) is enabled on your FreeSWITCH instance. The default mod_event_socket configuration binds to `::` (i.e., to listen to connections from any host), which will work on IPv4 or IPv6. 
+Make sure [mod_event_socket](https://freeswitch.org/confluence/display/FREESWITCH/mod_event_socket) is enabled on your FreeSWITCH instance. The default mod_event_socket configuration binds to `::` (i.e., to listen to connections from any host), which will work on IPv4 or IPv6.
 
 You can specify the scrape URI with the `--freeswitch.scrape-uri` flag. Example:
 
@@ -96,6 +96,8 @@ scrape_configs:
         replacement: localhost:9282
 ```
 
+if you are using dynamic service discovery, please follow the [example](https://github.com/fengxsong/httpsd?tab=readme-ov-file#integrate-with-prometheus-example)
+
 What this does is tell's Prometheus to do the following for each item in `static_configs.targets`:
 
 ```shell
@@ -120,7 +122,7 @@ The exporter will try to fetch values from the following commands:
 - `api show endpoint` all used endpoint
 - `api show codec` all used codec
 - `registration` all sofia registration details
-- `api memory` get freeswitch memory info 
+- `api memory` get freeswitch memory info
 
 List of exposed metrics:
 
@@ -221,7 +223,7 @@ List of exposed metrics:
 
 ## Compiling
 
-With go 1.20+, clone the project and:
+With go 1.22+, clone the project and:
 
 ```bash
 go build
