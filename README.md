@@ -1,12 +1,13 @@
 # FreeSWITCH Exporter for Prometheus
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/mroject/freeswitch_exporter)](https://goreportcard.com/report/github.com/mroject/freeswitch_exporter)
+[![Go Report Card](https://goreportcard.com/badge/github.com/fengxsong/freeswitch_exporter)](https://goreportcard.com/report/github.com/fengxsong/freeswitch_exporter)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/mroject/freeswitch_exporter/LICENSE)
+
+Since [PR](https://github.com/mroject/freeswitch_exporter/pull/26) has been closed, we will maintain our own fork.
 
 A [FreeSWITCH](https://freeswitch.org/confluence/display/FREESWITCH/FreeSWITCH+Explained) exporter for Prometheus.
 
 It communicates with FreeSWITCH using [mod_event_socket](https://freeswitch.org/confluence/display/FREESWITCH/mod_event_socket).
-
 
 Add metrics as below:
 
@@ -22,50 +23,51 @@ Add metrics as below:
 
 Add feature:
 
-1. `web.config` support tls, authorization and etc. 
-
-configuration exporter web.config visit: https://prometheus.io/docs/guides/basic-auth/
+1. `web.config` support tls, authorization and etc, please visit [ref](https://prometheus.io/docs/guides/basic-auth/)
 
 ## Getting Started
 
-Pre-built static binaries are available in [releases](https://github.com/mroject/freeswitch_exporter/releases).
-
-
+Pre-built static binaries are available in [releases](https://github.com/fengxsong/freeswitch_exporter/releases).
 
 To run it:
+
 ```bash
 ./freeswitch_exporter [flags]
 ```
 
 Help on flags:
-```
-./freeswitch_exporter --help
+
+```bash
 usage: freeswitch_exporter [<flags>]
 
+
 Flags:
-      --help                   Show context-sensitive help.
-  -l, --web.listen-address=":9282"
-                               Address to listen on for web interface and telemetry.
-      --web.telemetry-path="/metrics"
+  -h, --[no-]help              Show context-sensitive help (also try --help-long and --help-man).
+      --web.listen-address=:9282 ...  
+                               Addresses on which to expose metrics and web interface. Repeatable for multiple addresses.
+      --web.config.file=""     Path to configuration file that can enable TLS or authentication. See:
+                               https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md
+      --web.telemetry-path="/metrics"  
                                Path under which to expose metrics.
-  -u, --freeswitch.scrape-uri="tcp://localhost:8021"
-                               URI on which to scrape freeswitch. E.g.
-                               "tcp://localhost:8021"
+  -u, --freeswitch.scrape-uri="tcp://localhost:8021"  
+                               URI on which to scrape freeswitch. E.g. "tcp://localhost:8021"
   -t, --freeswitch.timeout=5s  Timeout for trying to get stats from freeswitch.
-  -P, --freeswitch.password="ClueCon"
+  -P, --freeswitch.password="ClueCon"  
                                Password for freeswitch event socket.
-      --web.config=""          [EXPERIMENTAL] Path to config yaml file that can
-                               enable TLS or authentication.
-      --version                Show application version.
+      --[no-]rtp.enable        enable rtp info(feature:todo!), default: false
+      --[no-]probe.enable      enable probe handler
+      --log.level=info         Only log messages with the given severity or above. One of: [debug, info, warn, error]
+      --log.format=logfmt      Output format of log messages. One of: [logfmt, json]
+      --[no-]version           Show application version.
 ```
 
 ## Usage
 
-Make sure [mod_event_socket](https://freeswitch.org/confluence/display/FREESWITCH/mod_event_socket) is enabled on your FreeSWITCH instance. The default mod_event_socket configuration binds to `::` (i.e., to listen to connections from any host), which will work on IPv4 or IPv6. 
+Make sure [mod_event_socket](https://freeswitch.org/confluence/display/FREESWITCH/mod_event_socket) is enabled on your FreeSWITCH instance. The default mod_event_socket configuration binds to `::` (i.e., to listen to connections from any host), which will work on IPv4 or IPv6.
 
 You can specify the scrape URI with the `--freeswitch.scrape-uri` flag. Example:
 
-```
+```bash
 ./freeswitch_exporter -u "tcp://localhost:8021"
 ```
 
@@ -94,6 +96,8 @@ scrape_configs:
         replacement: localhost:9282
 ```
 
+if you are using dynamic service discovery, please follow the [example](https://github.com/fengxsong/httpsd?tab=readme-ov-file#integrate-with-prometheus-example)
+
 What this does is tell's Prometheus to do the following for each item in `static_configs.targets`:
 
 ```shell
@@ -118,7 +122,7 @@ The exporter will try to fetch values from the following commands:
 - `api show endpoint` all used endpoint
 - `api show codec` all used codec
 - `registration` all sofia registration details
-- `api memory` get freeswitch memory info 
+- `api memory` get freeswitch memory info
 
 List of exposed metrics:
 
@@ -219,7 +223,7 @@ List of exposed metrics:
 
 ## Compiling
 
-With go 1.20+, clone the project and:
+With go 1.22+, clone the project and:
 
 ```bash
 go build
@@ -232,4 +236,3 @@ Dependencies will be fetched automatically.
 Feel free to send pull requests.
 
 Copyright (c) 2022 Zhang Lian Jun <z0413j@outlook.com>
-
