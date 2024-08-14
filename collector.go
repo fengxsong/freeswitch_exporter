@@ -27,9 +27,9 @@ import (
 // Collector implements prometheus.Collector (see below).
 // it also contains the config of the exporter.
 type Collector struct {
-	Timeout   time.Duration
-	Password  string
-	rtpEnable bool
+	Timeout  time.Duration
+	Password string
+	disables map[string]struct{}
 
 	conn  net.Conn
 	input *bufio.Reader
@@ -213,7 +213,7 @@ var (
 )
 
 // NewCollector processes uri, timeout and methods and returns a new Collector.
-func NewCollector(uri string, timeout time.Duration, password string, rtpEnable bool, logger log.Logger) (*Collector, error) {
+func NewCollector(uri string, timeout time.Duration, password string, logger log.Logger, disables ...string) (*Collector, error) {
 	var url *url.URL
 	var err error
 
@@ -221,12 +221,17 @@ func NewCollector(uri string, timeout time.Duration, password string, rtpEnable 
 		return nil, fmt.Errorf("cannot parse URI: %w", err)
 	}
 
+	tmp := make(map[string]struct{})
+	for i := range disables {
+		tmp[disables[i]] = struct{}{}
+	}
+
 	c := &Collector{
-		Timeout:   timeout,
-		Password:  password,
-		rtpEnable: rtpEnable,
-		url:       url,
-		logger:    logger,
+		Timeout:  timeout,
+		Password: password,
+		disables: tmp,
+		url:      url,
+		logger:   logger,
 		probeSuccessGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "probe_success",
 			Help: "Displays whether or not the probe was a success",
@@ -240,6 +245,33 @@ func NewCollector(uri string, timeout time.Duration, password string, rtpEnable 
 	return c, nil
 }
 
+type collector struct {
+	name   string
+	ignore bool // ignore and log command not found error
+	fn     func(*Collector, chan<- prometheus.Metric) error
+}
+
+var collectors = []collector{
+	{"builtin", false, scapeMetrics},
+	{"status", false, scrapeStatus},
+	{"sofiastatus", false, sofiaStatusMetrics},
+	{"memory", false, memoryMetrics},
+	{"loadmodule", false, loadModuleMetrics},
+	{"endpoint", false, endpointMetrics},
+	{"codec", false, codecMetrics},
+	{"registrations", false, registrationsMetrics},
+	{"verto", true, vertoMetrics},
+	{"rtp", false, variableRtpAudioMetrics},
+}
+
+func namesOfCollectors() []string {
+	var ret []string
+	for i := range collectors {
+		ret = append(ret, collectors[i].name)
+	}
+	return ret
+}
+
 // scrape will connect to the freeswitch instance and push metrics to the Prometheus channel.
 func (c *Collector) scrape(ch chan<- prometheus.Metric) error {
 	address := c.url.Host
@@ -251,11 +283,9 @@ func (c *Collector) scrape(ch chan<- prometheus.Metric) error {
 	var err error
 
 	c.conn, err = net.DialTimeout(c.url.Scheme, address, c.Timeout)
-
 	if err != nil {
 		return err
 	}
-
 	c.conn.SetDeadline(time.Now().Add(c.Timeout))
 	defer c.conn.Close()
 
@@ -265,62 +295,33 @@ func (c *Collector) scrape(ch chan<- prometheus.Metric) error {
 		return err
 	}
 
-	if err = c.scapeMetrics(ch); err != nil {
-		return err
-	}
-
-	if err = c.scrapeStatus(ch); err != nil {
-		return err
-	}
-
-	if err = c.sofiaStatusMetrics(ch); err != nil {
-		return err
-	}
-
-	if err = c.memoryMetrics(ch); err != nil {
-		return err
-	}
-
-	if err = c.loadModuleMetrics(ch); err != nil {
-		return err
-	}
-
-	if err = c.endpointMetrics(ch); err != nil {
-		return err
-	}
-	if err = c.codecMetrics(ch); err != nil {
-		return err
-	}
-	if err = c.registrationsMetrics(ch); err != nil {
-		return err
-	}
-
-	if err = c.vertoMetrics(ch); c.ignoreAndLogCommandNotFoundError(err) != nil {
-		return err
-	}
-
-	if c.rtpEnable {
-		if err = c.variableRtpAudioMetrics(ch); err != nil {
-			return err
+	for i := range collectors {
+		if _, ok := c.disables[collectors[i].name]; ok {
+			continue
+		}
+		if err := collectors[i].fn(c, ch); err != nil {
+			if !collectors[i].ignore || !c.ignoreAndLogCommandNotFoundError(err) {
+				return err
+			}
 		}
 	}
 
 	return nil
 }
 
-func (c *Collector) ignoreAndLogCommandNotFoundError(err error) error {
+func (c *Collector) ignoreAndLogCommandNotFoundError(err error) bool {
 	if strings.Contains(err.Error(), "Command not found") {
 		level.Warn(c.logger).Log("err", err)
-		return nil
+		return true
 	}
-	return err
+	return false
 }
 
-func (c *Collector) variableRtpAudioMetrics(_ chan<- prometheus.Metric) error {
+func variableRtpAudioMetrics(_ *Collector, _ chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) scapeMetrics(ch chan<- prometheus.Metric) error {
+func scapeMetrics(c *Collector, ch chan<- prometheus.Metric) error {
 	for _, metricDef := range metricList {
 		if len(metricDef.Command) == 0 {
 			// this metric will be fetched by scapeStatus
@@ -328,7 +329,6 @@ func (c *Collector) scapeMetrics(ch chan<- prometheus.Metric) error {
 		}
 
 		value, err := c.fetchMetric(&metricDef)
-
 		if err != nil {
 			return err
 		}
@@ -338,7 +338,6 @@ func (c *Collector) scapeMetrics(ch chan<- prometheus.Metric) error {
 			metricDef.Type,
 			value,
 		)
-
 		if err != nil {
 			return err
 		}
@@ -349,7 +348,7 @@ func (c *Collector) scapeMetrics(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) loadModuleMetrics(ch chan<- prometheus.Metric) error {
+func loadModuleMetrics(c *Collector, ch chan<- prometheus.Metric) error {
 	response, err := c.fsCommand("api xml_locate configuration configuration name modules.conf")
 	if err != nil {
 		return err
@@ -369,14 +368,11 @@ func (c *Collector) loadModuleMetrics(ch chan<- prometheus.Metric) error {
 			Name: "freeswitch_load_module",
 			Help: "freeswitch load module status",
 		},
-		[]string{
-			"module",
-		},
+		[]string{"module"},
 	)
 
 	for _, m := range cfgs.Modules.Load {
 		status, err := c.fsCommand("api module_exists " + m.Module)
-
 		if err != nil {
 			return err
 		}
@@ -385,14 +381,14 @@ func (c *Collector) loadModuleMetrics(ch chan<- prometheus.Metric) error {
 		if string(status) == "true" {
 			load_module = 1
 		}
-		level.Debug(c.logger).Log("module", m.Module, " load status", string(status))
+		level.Debug(c.logger).Log("module", m.Module, "loadstatus", string(status))
 		fsLoadModules.WithLabelValues(m.Module).Set(float64(load_module))
 	}
 	fsLoadModules.MetricVec.Collect(ch)
 	return nil
 }
 
-func (c *Collector) sofiaStatusMetrics(ch chan<- prometheus.Metric) error {
+func sofiaStatusMetrics(c *Collector, ch chan<- prometheus.Metric) error {
 	response, err := c.fsCommand("api sofia xmlstatus gateway")
 	if err != nil {
 		return err
@@ -418,7 +414,6 @@ func (c *Collector) sofiaStatusMetrics(ch chan<- prometheus.Metric) error {
 			prometheus.GaugeValue,
 			float64(status),
 		)
-
 		if err != nil {
 			return err
 		}
@@ -538,7 +533,7 @@ func (c *Collector) sofiaStatusMetrics(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) memoryMetrics(ch chan<- prometheus.Metric) error {
+func memoryMetrics(c *Collector, ch chan<- prometheus.Metric) error {
 	response, err := c.fsCommand("api memory")
 	if err != nil {
 		return err
@@ -548,22 +543,19 @@ func (c *Collector) memoryMetrics(ch chan<- prometheus.Metric) error {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-
 		if line == "+OK" {
 			break
 		}
 
 		matches := regexp.MustCompile(`(.+?) \((.+?)\):\s+(\d+)`).FindStringSubmatch(line)
-
 		if matches == nil {
-			level.Debug(c.logger).Log("msg", "Cannot parse memory line", "line", line)
+			level.Debug(c.logger).Log("msg", "cannot find stringsubmatch in parsed memory line", "line", line)
 			continue
 		}
 
 		help := matches[1]
 		field := matches[2]
 		value, err := strconv.ParseFloat(matches[3], 64)
-
 		if err != nil {
 			return fmt.Errorf("error parsing memory: %w", err)
 		}
@@ -573,7 +565,6 @@ func (c *Collector) memoryMetrics(ch chan<- prometheus.Metric) error {
 			prometheus.GaugeValue,
 			value,
 		)
-
 		if err != nil {
 			return err
 		}
@@ -584,7 +575,7 @@ func (c *Collector) memoryMetrics(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) endpointMetrics(ch chan<- prometheus.Metric) error {
+func endpointMetrics(c *Collector, ch chan<- prometheus.Metric) error {
 	response, err := c.fsCommand("api show endpoint as xml")
 	if err != nil {
 		return err
@@ -605,7 +596,6 @@ func (c *Collector) endpointMetrics(ch chan<- prometheus.Metric) error {
 			prometheus.GaugeValue,
 			float64(1),
 		)
-
 		if err != nil {
 			return err
 		}
@@ -615,7 +605,7 @@ func (c *Collector) endpointMetrics(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) registrationsMetrics(ch chan<- prometheus.Metric) error {
+func registrationsMetrics(c *Collector, ch chan<- prometheus.Metric) error {
 	response, err := c.fsCommand("api show registrations as xml")
 	if err != nil {
 		return err
@@ -635,7 +625,6 @@ func (c *Collector) registrationsMetrics(ch chan<- prometheus.Metric) error {
 			prometheus.GaugeValue,
 			float64(1),
 		)
-
 		if err != nil {
 			return err
 		}
@@ -645,7 +634,7 @@ func (c *Collector) registrationsMetrics(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) codecMetrics(ch chan<- prometheus.Metric) error {
+func codecMetrics(c *Collector, ch chan<- prometheus.Metric) error {
 	response, err := c.fsCommand("api show codec as xml")
 	if err != nil {
 		return err
@@ -664,7 +653,6 @@ func (c *Collector) codecMetrics(ch chan<- prometheus.Metric) error {
 			prometheus.GaugeValue,
 			float64(1),
 		)
-
 		if err != nil {
 			return err
 		}
@@ -674,7 +662,7 @@ func (c *Collector) codecMetrics(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) vertoMetrics(ch chan<- prometheus.Metric) error {
+func vertoMetrics(c *Collector, ch chan<- prometheus.Metric) error {
 	response, err := c.fsCommand("api verto xmlstatus")
 	if err != nil {
 		return err
@@ -699,7 +687,6 @@ func (c *Collector) vertoMetrics(ch chan<- prometheus.Metric) error {
 			prometheus.GaugeValue,
 			float64(vt_status),
 		)
-
 		if err != nil {
 			return err
 		}
@@ -709,7 +696,7 @@ func (c *Collector) vertoMetrics(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *Collector) scrapeStatus(ch chan<- prometheus.Metric) error {
+func scrapeStatus(c *Collector, ch chan<- prometheus.Metric) error {
 	response, err := c.fsCommand("api status")
 	if err != nil {
 		return err
@@ -754,7 +741,6 @@ func (c *Collector) scrapeStatus(ch chan<- prometheus.Metric) error {
 func (c *Collector) fetchMetric(metricDef *Metric) (float64, error) {
 	now := time.Now()
 	response, err := c.fsCommand(metricDef.Command)
-
 	if err != nil {
 		return 0, err
 	}
@@ -783,7 +769,6 @@ func (c *Collector) fetchMetric(metricDef *Metric) (float64, error) {
 		return value, nil
 	case "time_synced":
 		value, err := strconv.ParseInt(string(response), 10, 64)
-
 		if err != nil {
 			return 0, fmt.Errorf("cannot read FreeSWITCH time: %w", err)
 		}
@@ -804,24 +789,27 @@ func (c *Collector) fetchMetric(metricDef *Metric) (float64, error) {
 
 func (c *Collector) fsCommand(command string) ([]byte, error) {
 	_, err := io.WriteString(c.conn, command+"\n\n")
-
 	if err != nil {
 		return nil, fmt.Errorf("cannot write command: %w", err)
 	}
 
 	mimeReader := textproto.NewReader(c.input)
 	message, err := mimeReader.ReadMIMEHeader()
-
 	if err != nil {
 		return nil, fmt.Errorf("cannot read command response: %w", err)
 	}
 
 	value := message.Get("Content-Length")
-	length, _ := strconv.Atoi(value)
+	if value == "" {
+		return nil, errors.New("missing header 'Content-Length'")
+	}
+	length, err := strconv.Atoi(value)
+	if err != nil {
+		return nil, err
+	}
 
 	body := make([]byte, length)
 	_, err = io.ReadFull(c.input, body)
-
 	if err != nil {
 		return nil, err
 	}
@@ -878,11 +866,12 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	c.probeDurationGauge.Set(duration)
 
 	if err != nil {
+		c.probeSuccessGauge.Set(0)
 		level.Error(c.logger).Log("duration", duration, "err", err)
-		totalScrapes.WithLabelValues("failed").Inc()
+		totalScrapes.WithLabelValues(c.url.String(), "failed").Inc()
 	} else {
 		c.probeSuccessGauge.Set(1)
-		totalScrapes.WithLabelValues("success").Inc()
+		totalScrapes.WithLabelValues(c.url.String(), "success").Inc()
 		level.Info(c.logger).Log("duration", duration, "msg", "Probe succeeded")
 	}
 	ch <- c.probeDurationGauge

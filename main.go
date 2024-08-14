@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -24,7 +26,7 @@ var totalScrapes = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Namespace: namespace,
 	Name:      "exporter_total_scrapes",
 	Help:      "Current total freeswitch scrapes.",
-}, []string{"status"})
+}, []string{"target", "status"})
 
 func init() {
 	prometheus.MustRegister(versioncollector.NewCollector(app))
@@ -79,8 +81,8 @@ func run() int {
 		password = kingpin.Flag(
 			"freeswitch.password",
 			"Password for freeswitch event socket.").Short('P').Default("ClueCon").String()
-		rtpEnable   = kingpin.Flag("rtp.enable", "enable rtp info(feature:todo!), default: false").Default("false").Bool()
-		probeEnable = kingpin.Flag("probe.enable", "enable probe handler /probe").Default("false").Bool()
+		disables    = kingpin.Flag("disables", fmt.Sprintf("Disable any of the collectors: %s", namesOfCollectors())).Default("").Strings()
+		probeEnable = kingpin.Flag("probe.enable", "Enable probe handler /probe").Default("false").Bool()
 	)
 	promlogConfig := &promlog.Config{}
 	flag.AddFlags(kingpin.CommandLine, promlogConfig)
@@ -89,12 +91,16 @@ func run() int {
 	kingpin.Parse()
 	logger := promlog.New(promlogConfig)
 
+	if len(*disables) > 0 {
+		level.Info(logger).Log("disables", strings.Join(*disables, ", "))
+	}
+
 	if *probeEnable {
 		http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
 			probeHandler(w, r, logger, *timeout, nil)
 		})
 	} else {
-		c, err := NewCollector(*scrapeURI, *timeout, *password, *rtpEnable, logger)
+		c, err := NewCollector(*scrapeURI, *timeout, *password, logger, *disables...)
 		if err != nil {
 			level.Error(logger).Log("msg", "error creating collector", "err", err)
 			return 1

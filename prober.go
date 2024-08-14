@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -29,10 +30,10 @@ func probeHandler(w http.ResponseWriter, r *http.Request, logger log.Logger, tim
 		return
 	}
 	password := params.Get("password")
-	rtpEnable, _ := strconv.ParseBool(params.Get("rtp_enable"))
+	disables := params.Get("disables")
 
 	scrapeLogger := log.With(logger, "target", target)
-	col, err := NewCollector(target, time.Duration(float64(time.Second)*(timeoutSeconds)), password, rtpEnable, scrapeLogger)
+	col, err := NewCollector(target, time.Duration(float64(time.Second)*(timeoutSeconds)), password, scrapeLogger, strings.Split(disables, ",")...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
