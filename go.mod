@@ -1,4 +1,4 @@
-module github.com/mroject/freeswitch_exporter
+module github.com/fengxsong/freeswitch_exporter
 
 go 1.22
 
